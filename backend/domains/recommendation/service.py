@@ -20,7 +20,9 @@ def get_hybrid_recommendations(db: Session, user_id: str, req: schema.Recommenda
         recommended_movie_ids = model_instance.predict(
             user_id, 
             top_k=50,
-            available_time=req.available_time
+            available_time=req.available_time,
+            preferred_genres=req.genres if req.genres else None,
+            preferred_otts=None  # OTT 필터링은 추후 구현 예정
         )
     except Exception as e:
         print(f"AI Model Error: {e}")

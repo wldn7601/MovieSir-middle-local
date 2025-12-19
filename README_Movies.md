@@ -140,8 +140,15 @@ for mid in recommended_movie_ids:
 
 **문제점**:
 
-- AI 모델이 이미 추천한 영화를 백엔드에서 다시 필터링
-- Track B의 목적(장르 확장 추천)이 완전히 무의미해짐
+1. **AI 모델에 필터 정보를 전달하지 않음**
+
+   - `available_time` 미전달 → AI 모델이 기본값 180분 사용
+   - `preferred_genres` 미전달 → **AI 모델이 장르 필터링 안 함**
+   - `preferred_otts` 미전달 → AI 모델이 OTT 필터링 안 함
+
+2. **백엔드에서 이중 필터링**
+   - AI 모델이 이미 추천한 영화를 백엔드에서 다시 필터링
+   - Track B의 목적(장르 확장 추천)이 완전히 무의미해짐
 
 #### 2.4 AI 모델 (변경 전)
 
@@ -355,7 +362,9 @@ class RecommendationRequest(BaseModel):
 recommended_movie_ids = model_instance.predict(
     user_id,
     top_k=50,
-    available_time=req.available_time  # ✅ 시간 전달
+    available_time=req.available_time,  # ✅ 시간 전달
+    preferred_genres=req.genres if req.genres else None,  # ✅ 장르 전달
+    preferred_otts=None  # OTT 필터링은 추후 구현 예정
 )
 
 # 백엔드 필터링
@@ -376,9 +385,16 @@ for mid in recommended_movie_ids:
 
 **개선점**:
 
-- AI 모델에 시간 정보 전달
-- 이중 필터링 제거 (AI 모델을 신뢰)
-- 성인 콘텐츠만 안전장치로 필터링
+1. **AI 모델에 필터 정보 전달**
+
+   - `available_time`: AI 모델이 추천 모드 결정 및 런타임 필터링에 사용
+   - `preferred_genres`: **AI 모델이 Track A 장르 필터링에 사용**
+   - `preferred_otts`: 현재는 None (추후 구현 예정)
+
+2. **백엔드 필터링 간소화**
+   - 이중 필터링 제거 (AI 모델을 신뢰)
+   - 성인 콘텐츠만 안전장치로 필터링
+   - Track B의 다양성 확보
 
 #### 2.4 AI 모델 (변경 후)
 

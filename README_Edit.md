@@ -74,13 +74,21 @@ class RecommendationRequest(BaseModel):
 #### 1.2 서비스 레이어 수정
 
 ```python
-# backend/domains/recommendation/service.py (20-24번 줄)
+# backend/domains/recommendation/service.py (20-26번 줄)
 recommended_movie_ids = model_instance.predict(
     user_id,
     top_k=50,
-    available_time=req.available_time  # ✅ 전달
+    available_time=req.available_time,  # ✅ 시간 전달
+    preferred_genres=req.genres if req.genres else None,  # ✅ 장르 전달
+    preferred_otts=None  # OTT 필터링은 추후 구현 예정
 )
 ```
+
+**개선점**:
+
+- `available_time`: AI 모델이 추천 모드 결정 및 런타임 필터링에 사용
+- `preferred_genres`: AI 모델이 Track A 장르 필터링에 사용
+- `preferred_otts`: 현재는 None (추후 구현 예정)
 
 #### 1.3 프론트엔드 API 호출 수정
 

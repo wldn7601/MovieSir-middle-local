@@ -167,22 +167,119 @@
 
 ## 📊 핵심 차이점 요약표
 
-| 단계                | 배포 버전             | 로컬 버전                          | 영향      |
-| ------------------- | --------------------- | ---------------------------------- | --------- |
-| **프론트엔드 전송** | `runtime_limit`만     | `available_time` + `runtime_limit` | 🔴 치명적 |
-| **백엔드 Schema**   | `available_time` 없음 | `available_time` 있음              | 🔴 치명적 |
-| **백엔드→AI 전달**  | 파라미터 전달 안 함   | 모든 파라미터 전달                 | 🔴 치명적 |
-| **AI 판단 기준**    | 180분 (기본값)        | 300분 (사용자 입력)                | 🔴 치명적 |
-| **추천 모드**       | 단일 (180<240)        | 단일 (300<420)                     | 🟡 중요   |
-| **Track A 장르**    | 작동 안 함            | 정확히 작동                        | 🔴 치명적 |
-| **백엔드 필터링**   | 중복 필터링           | 최소 필터링                        | 🟡 중요   |
-| **Track B 다양성**  | 상실                  | 유지                               | 🟡 중요   |
+| 단계                 | 배포 버전             | 로컬 버전                          | 영향      |
+| -------------------- | --------------------- | ---------------------------------- | --------- |
+| **프론트엔드 전송**  | `runtime_limit`만     | `available_time` + `runtime_limit` | 🔴 치명적 |
+| **백엔드 Schema**    | `available_time` 없음 | `available_time` 있음              | 🔴 치명적 |
+| **백엔드→AI 전달**   | 파라미터 전달 안 함   | 모든 파라미터 전달                 | 🔴 치명적 |
+| **AI 판단 기준**     | 180분 (기본값)        | 300분 (사용자 입력)                | 🔴 치명적 |
+| **추천 모드**        | 단일 (180<240)        | 단일 (300<420)                     | 🟡 중요   |
+| **Track A 장르**     | 작동 안 함            | 정확히 작동                        | 🔴 치명적 |
+| **백엔드 필터링**    | 중복 필터링           | 최소 필터링                        | 🟡 중요   |
+| **Track B 다양성**   | 상실                  | 유지                               | 🟡 중요   |
+| **재추천 장르 필터** | 필터링 없음           | 장르 필터링 적용                   | 🔴 치명적 |
+
+---
+
+## 🔄 재추천 기능의 장르 필터링 문제
+
+### 문제 설명
+
+사용자가 "재추천 받기" 버튼을 클릭했을 때, 선택한 장르와 다른 영화가 추천되는 문제가 발생합니다.
+
+**예시:**
+
+- 사용자 선택: 1시간, 로맨스 장르
+- 초기 추천: 로맨스 영화 3개 표시 ✅
+- "재추천 받기" 클릭 → **애니메이션, 판타지 등 다른 장르 영화 표시** ❌
+
+### 원인 분석
+
+#### 1. 백엔드 응답 구조
+
+GPU 서버는 Track A (장르 일치)와 Track B (다양성, 장르 무시) 영화를 구분하여 반환하지만, 백엔드는 이를 하나의 리스트로 합쳐서 반환합니다.
+
+```python
+# backend/domains/recommendation/service.py
+def get_hybrid_recommendations(...):
+    # Track A + Track B 영화를 하나의 리스트로 반환
+    return results  # [Track A 영화들 + Track B 영화들]
+```
+
+#### 2. 프론트엔드 처리
+
+프론트엔드는 받은 전체 영화 목록을 절반으로 나누어 사용합니다.
+
+```typescript
+// frontend/src/api/movieApi.ts
+const halfLength = Math.ceil(allMovies.length / 2);
+return {
+  algorithmic: allMovies.slice(0, halfLength), // Track A + Track B 일부
+  popular: allMovies.slice(halfLength), // Track B 일부
+};
+```
+
+#### 3. 재추천 로직 (배포 버전)
+
+```typescript
+// frontend/src/store/useMovieStore.ts (배포 버전)
+removeRecommendedMovie: (movieId) => {
+  // 전체 목록에서 아직 표시되지 않은 영화 찾기
+  const availableMovies = state.allRecommendedMovies.filter(
+    (m) => !shownIds.includes(m.id)
+  );
+  // ❌ 장르 필터링 없음!
+  const nextMovie = availableMovies[0];
+};
+```
+
+**문제점:**
+
+- `allRecommendedMovies`에는 Track A (로맨스) + Track B (다양한 장르) 영화가 섞여 있음
+- 재추천 시 장르 필터링을 하지 않아 Track B 영화(로맨스가 아닌 영화)가 선택될 수 있음
+
+### 해결 방법 (로컬 버전)
+
+재추천 시 사용자가 선택한 장르와 일치하는 영화만 선택하도록 필터링을 추가했습니다.
+
+```typescript
+// frontend/src/store/useMovieStore.ts (로컬 버전)
+removeRecommendedMovie: (movieId) => {
+  // 전체 목록에서 아직 표시되지 않은 영화 찾기
+  let availableMovies = state.allRecommendedMovies.filter(
+    (m) => !shownIds.includes(m.id)
+  );
+
+  // ✅ 사용자가 장르를 선택한 경우, 해당 장르와 일치하는 영화만 필터링
+  if (state.filters.genres.length > 0) {
+    availableMovies = availableMovies.filter(
+      (m) => m.genres && m.genres.some((g) => state.filters.genres.includes(g))
+    );
+  }
+
+  const nextMovie = availableMovies[0];
+};
+```
+
+**개선 효과:**
+
+- 로맨스를 선택한 경우 → 로맨스 장르가 포함된 영화만 재추천
+- 장르를 선택하지 않은 경우 → 모든 영화 허용
+- 재추천 가능한 영화가 없으면 → 빈 슬롯으로 표시 (강제로 채우지 않음)
+
+### 배포 버전 vs 로컬 버전
+
+| 항목                   | 배포 버전              | 로컬 버전      |
+| ---------------------- | ---------------------- | -------------- |
+| **재추천 장르 필터링** | ❌ 없음                | ✅ 있음        |
+| **Track B 영화 노출**  | ⚠️ 재추천 시 노출 가능 | ✅ 차단됨      |
+| **사용자 경험**        | ❌ 혼란스러움          | ✅ 일관성 있음 |
 
 ---
 
 ## 📝 결론
 
-배포된 서비스(MovieSir-middle)는 **프론트엔드에서 `available_time`을 전송하지 않고, 백엔드에서 AI 모델에 필수 파라미터를 전달하지 않으며, 백엔드에서 중복 필터링을 수행하고, 구버전(v1) 알고리즘을 사용**하여 추천 로직이 제대로 작동하지 않습니다.
+배포된 서비스(MovieSir-middle)는 **프론트엔드에서 `available_time`을 전송하지 않고, 백엔드에서 AI 모델에 필수 파라미터를 전달하지 않으며, 백엔드에서 중복 필터링을 수행하고, 구버전(v1) 알고리즘을 사용하며, 재추천 시 장르 필터링을 하지 않아** 추천 로직이 제대로 작동하지 않습니다.
 
 로컬 버전(MovieSir-middle-local)의 변경사항을 배포 버전에 적용하면 문제가 해결됩니다.
 
@@ -192,6 +289,7 @@
 > **필수 파일:**
 >
 > - `frontend/src/api/movieApi.ts` (프론트엔드 API 수정)
+> - `frontend/src/store/useMovieStore.ts` (재추천 장르 필터링 추가)
 > - `backend/domains/recommendation/schema.py` (스키마 수정)
 > - `backend/domains/recommendation/service.py` (서비스 로직 수정)
 > - `ai/inference/db_conn_movie_reco_v2.py` (v2 알고리즘)

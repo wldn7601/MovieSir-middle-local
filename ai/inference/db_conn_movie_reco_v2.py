@@ -500,6 +500,11 @@ class HybridRecommender:
             
             # Track A
             if filtered_ids_a:
+                print(f"\n{'='*80}")
+                print(f"[Track A] 필터링 후 영화 수: {len(filtered_ids_a)}")
+                print(f"[Track A] 사용자 선택 장르: {preferred_genres}")
+                print(f"{'='*80}\n")
+                
                 filtered_sbert_a = sbert_scores[filtered_indices_a]
                 filtered_lightgcn_a = lightgcn_scores[filtered_indices_a]
                 
@@ -518,6 +523,30 @@ class HybridRecommender:
                         final_scores_a[i] = -np.inf
                 
                 valid_indices_a = [i for i, score in enumerate(final_scores_a) if score != -np.inf]
+                
+                print(f"[Track A] 유효한 영화 수 (시청 기록 제외 후): {len(valid_indices_a)}")
+                
+                # 장르 검증 로깅
+                if preferred_genres and len(valid_indices_a) > 0:
+                    print(f"\n[Track A] 장르 검증 시작...")
+                    genre_mismatch_count = 0
+                    for idx in valid_indices_a[:10]:  # 처음 10개만 검증
+                        mid = filtered_ids_a[idx]
+                        meta = self.metadata_map.get(mid, {})
+                        movie_genres = meta.get('genres', [])
+                        has_match = any(g in movie_genres for g in preferred_genres)
+                        if not has_match:
+                            genre_mismatch_count += 1
+                            print(f"  ⚠️  영화 {mid} ({meta.get('title', 'Unknown')}): 장르 불일치!")
+                            print(f"      영화 장르: {movie_genres}")
+                            print(f"      요청 장르: {preferred_genres}")
+                    
+                    if genre_mismatch_count > 0:
+                        print(f"\n[Track A] ❌ 장르 불일치 영화 발견: {genre_mismatch_count}개")
+                    else:
+                        print(f"\n[Track A] ✅ 장르 필터링 정상 작동")
+                
+                # 랜덤 선택 (영화가 부족하면 있는 만큼만 반환)
                 if len(valid_indices_a) >= 50:
                     top_50_indices_a = sorted(valid_indices_a, key=lambda i: final_scores_a[i], reverse=True)[:50]
                     selected_indices_a = np.random.choice(top_50_indices_a, size=min(25, len(top_50_indices_a)), replace=False)
@@ -528,7 +557,10 @@ class HybridRecommender:
                     top_20_indices_a = sorted(valid_indices_a, key=lambda i: final_scores_a[i], reverse=True)[:20]
                     selected_indices_a = np.random.choice(top_20_indices_a, size=min(15, len(top_20_indices_a)), replace=False)
                 else:
+                    # 영화가 부족하면 있는 만큼만 반환 (강제로 채우지 않음)
                     selected_indices_a = valid_indices_a
+                
+                print(f"[Track A] 최종 선택된 영화 수: {len(selected_indices_a)}\n")
                 
                 track_a = self._build_recommendations(filtered_ids_a, final_scores_a, selected_indices_a)
                 

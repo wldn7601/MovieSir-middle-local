@@ -41,9 +41,10 @@
 
 ### 프론트엔드 (TypeScript)
 
-| 파일                           | 변경 유형 | 설명                            |
-| ------------------------------ | --------- | ------------------------------- |
-| `frontend/src/api/movieApi.ts` | 수정      | `available_time` 필드 전송 추가 |
+| 파일                                  | 변경 유형 | 설명                            |
+| ------------------------------------- | --------- | ------------------------------- |
+| `frontend/src/api/movieApi.ts`        | 수정      | `available_time` 필드 전송 추가 |
+| `frontend/src/store/useMovieStore.ts` | 수정      | 재추천 시 장르 필터링 로직 추가 |
 
 ---
 
@@ -410,6 +411,105 @@ const response = await axiosInstance.post<BackendRecommendResponse>(
 
 ---
 
+### 6. `frontend/src/store/useMovieStore.ts`
+
+#### 문제: 재추천 시 장르 불일치 영화 노출
+
+**증상**: 사용자가 로맨스를 선택하고 "재추천 받기"를 클릭하면 애니메이션, 판타지 등 다른 장르 영화가 표시됨
+
+**원인**:
+
+1. 백엔드가 Track A (장르 일치) + Track B (다양성, 장르 무시) 영화를 하나의 리스트로 반환
+2. 프론트엔드가 이를 절반으로 나누어 `algorithmic` / `popular`로 사용
+3. 재추천 시 장르 필터링 없이 순차적으로 영화를 선택
+4. Track B 영화(장르 무시)가 재추천에 포함될 수 있음
+
+**변경 위치**: 148-160번 줄
+
+**변경 전**:
+
+```typescript
+removeRecommendedMovie: (movieId) =>
+  set((state) => {
+    // 전체 목록에서 아직 표시되지 않은 영화 찾기
+    const availableMovies = state.allRecommendedMovies.filter(
+      (m) => !shownIds.includes(m.id)
+    );
+    // ❌ 장르 필터링 없음!
+    const nextMovie = availableMovies[0];
+
+    if (nextMovie) {
+      newRecommended.push(nextMovie);
+      shownIds.push(nextMovie.id);
+    }
+  });
+```
+
+**변경 후**:
+
+```typescript
+removeRecommendedMovie: (movieId) =>
+  set((state) => {
+    // 전체 목록에서 아직 표시되지 않은 영화 찾기
+    let availableMovies = state.allRecommendedMovies.filter(
+      (m) => !shownIds.includes(m.id)
+    );
+
+    // ✅ 사용자가 장르를 선택한 경우, 해당 장르와 일치하는 영화만 필터링
+    if (state.filters.genres.length > 0) {
+      const beforeFilter = availableMovies.length;
+      availableMovies = availableMovies.filter(
+        (m) =>
+          m.genres && m.genres.some((g) => state.filters.genres.includes(g))
+      );
+      console.log(
+        `  장르 필터링: ${beforeFilter}개 → ${availableMovies.length}개`
+      );
+    }
+
+    const nextMovie = availableMovies[0];
+
+    if (nextMovie) {
+      console.log(
+        "✅ 다음 영화로 채움:",
+        nextMovie.title,
+        "- 장르:",
+        nextMovie.genres
+      );
+      newRecommended.push(nextMovie);
+      shownIds.push(nextMovie.id);
+    } else {
+      console.log("⚠️ 더 이상 추천할 영화가 없습니다");
+    }
+  });
+```
+
+**개선 효과**:
+
+- ✅ 로맨스 선택 시 → 로맨스 장르가 포함된 영화만 재추천
+- ✅ 장르 미선택 시 → 모든 영화 허용
+- ✅ 재추천 가능한 영화 부족 시 → 빈 슬롯으로 표시 (강제로 채우지 않음)
+- ✅ 사용자 경험 일관성 유지
+
+**디버그 로깅 추가**:
+
+```typescript
+console.log("  사용자 선택 장르:", state.filters.genres);
+console.log(`  장르 필터링: ${beforeFilter}개 → ${availableMovies.length}개`);
+console.log(
+  "  남은 영화 목록:",
+  availableMovies.map((m) => `${m.title} (${m.genres?.join(", ")})`)
+);
+console.log(
+  "✅ 다음 영화로 채움:",
+  nextMovie.title,
+  "- 장르:",
+  nextMovie.genres
+);
+```
+
+---
+
 ## 환경 설정 변경
 
 ### 1. AI 서버 환경 변수 파일 생성
@@ -593,6 +693,31 @@ npm run dev
 ✅ **백엔드 스키마**: `available_time` 필드 추가  
 ✅ **서비스 레이어**: 필터링 간소화, 디버그 로깅 추가  
 ✅ **AI 어댑터**: 추천 모드 로깅 추가  
-✅ **프론트엔드**: `available_time` 전송  
+✅ **프론트엔드 API**: `available_time` 전송  
+✅ **프론트엔드 Store**: 재추천 시 장르 필터링 추가  
 ✅ **AI 서버**: v2 모델 전환, dotenv 로딩, DB 사용자명 수정  
 ✅ **환경 설정**: AI 서버 `.env` 파일 생성
+
+---
+
+## 주요 개선 효과 요약
+
+### 추천 정확도
+
+- ✅ 사용자 입력 시간이 AI 모델까지 정확히 전달
+- ✅ Track A/B 필터링이 AI 모델에서 올바르게 처리
+- ✅ 재추천 시에도 선택한 장르 유지
+
+### 사용자 경험
+
+- ✅ 입력한 시간대로 정확한 추천
+- ✅ 7시간 이상 입력 시 영화 조합 추천
+- ✅ Track B로 새로운 영화 발견 가능
+- ✅ 재추천 시 일관된 장르 경험
+
+### 개발자 경험
+
+- ✅ 콘솔 로그로 추천 모드 즉시 확인
+- ✅ 필터링 단계별 통계 확인
+- ✅ 재추천 장르 필터링 디버그 로그
+- ✅ 디버깅 용이

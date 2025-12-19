@@ -68,6 +68,14 @@ class AIModelAdapter:
                 response.raise_for_status()
                 result = response.json()
 
+            # 추천 타입 로깅
+            rec_type = 'combination' if available_time >= 420 else 'single'
+            print(f"\n{'='*80}")
+            print(f"[AI Model] 추천 모드: {'🎬 단일 영화 추천' if rec_type == 'single' else '🎞️  영화 조합 추천'}")
+            print(f"[AI Model] 입력 시간: {available_time}분 ({available_time//60}시간 {available_time%60}분)")
+            print(f"[AI Model] 조합 추천 기준: 420분(7시간) 이상")
+            print(f"{'='*80}\n")
+
             # 결과에서 movie_id 추출
             movie_ids = []
 

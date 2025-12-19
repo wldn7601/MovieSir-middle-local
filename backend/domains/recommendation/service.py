@@ -17,7 +17,11 @@ def get_hybrid_recommendations(db: Session, user_id: str, req: schema.Recommenda
     # model_instance는 router에서 주입받거나 전역 변수로 로드된 것을 사용
     try:
         # 필터링 후에도 충분한 영화가 남도록 더 많이 요청
-        recommended_movie_ids = model_instance.predict(user_id, top_k=50)
+        recommended_movie_ids = model_instance.predict(
+            user_id, 
+            top_k=50,
+            available_time=req.available_time
+        )
     except Exception as e:
         print(f"AI Model Error: {e}")
         recommended_movie_ids = []
@@ -32,19 +36,41 @@ def get_hybrid_recommendations(db: Session, user_id: str, req: schema.Recommenda
     # 순서 보정 (AI가 추천한 순서대로 정렬) - tmdb_id 기준
     movies_map = {m.tmdb_id: m for m in movies}
     results = []
+    
+    # 필터링 통계
+    filtered_counts = {
+        'total': len(recommended_movie_ids),
+        'not_in_db': 0,
+        'adult': 0,
+        'passed': 0
+    }
+    
     for mid in recommended_movie_ids:
-        if mid in movies_map:
-            m = movies_map[mid]
-            # 장르/시간/성인 필터링
-            if req.exclude_adult and m.adult:
-                continue
-            if req.runtime_limit and m.runtime and m.runtime > req.runtime_limit:
-                continue
-            # 장르 필터링: 요청된 장르 중 하나라도 포함되면 통과
-            if req.genres and m.genres:
-                if not any(g in m.genres for g in req.genres):
-                    continue
-            results.append(m)
+        if mid not in movies_map:
+            filtered_counts['not_in_db'] += 1
+            continue
+            
+        m = movies_map[mid]
+        
+        # 성인 콘텐츠만 필터링 (AI 모델이 이미 장르/시간 고려함)
+        if req.exclude_adult and m.adult:
+            filtered_counts['adult'] += 1
+            continue
+        
+        # ❌ 제거: 런타임 필터링 (AI 모델이 이미 처리)
+        # ❌ 제거: 장르 필터링 (Track B는 장르 무시해야 함)
+        
+        results.append(m)
+        filtered_counts['passed'] += 1
+    
+    # 필터링 통계 출력
+    print(f"\n{'='*80}")
+    print(f"[Backend Filter] AI 추천: {filtered_counts['total']}개")
+    print(f"[Backend Filter] DB 없음: {filtered_counts['not_in_db']}개")
+    print(f"[Backend Filter] 성인 제외: {filtered_counts['adult']}개")
+    print(f"[Backend Filter] ✅ 최종 결과: {filtered_counts['passed']}개")
+    print(f"[Backend Filter] ℹ️  런타임/장르 필터링은 AI 모델에서 처리됨")
+    print(f"{'='*80}\n")
             
     return results
 

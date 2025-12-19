@@ -3,8 +3,13 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from typing import List, Optional
 import os
+from dotenv import load_dotenv
 
-from inference.db_conn_movie_reco_v1 import HybridRecommender
+# .env 파일 로드
+load_dotenv()
+
+# from inference.db_conn_movie_reco_v1 import HybridRecommender
+from inference.db_conn_movie_reco_v2 import HybridRecommender
 
 app = FastAPI(title="MovieSir AI Service")
 
@@ -19,7 +24,7 @@ async def load_model():
             'host': os.getenv("DATABASE_HOST", "localhost"),
             'port': int(os.getenv("DATABASE_PORT", 5432)),
             'database': os.getenv("DATABASE_NAME", "moviesir"),
-            'user': os.getenv("DATABASE_USER", "movigation"),
+            'user': os.getenv("DATABASE_USER", "moviesir"),  # ✅ 수정: movigation → moviesir
             'password': os.getenv("DATABASE_PASSWORD", "")
         }
         recommender = HybridRecommender(

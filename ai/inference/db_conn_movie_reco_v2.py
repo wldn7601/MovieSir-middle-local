@@ -16,8 +16,8 @@ import os
 Hybrid Recommender with PostgreSQL Database
 - SBERT (70%) + LightGCN (30%)
 - 장르, 런타임, OTT 필터링 지원
-- 240분 미만: 단일 영화 추천 (Track A, B)
-- 240분 이상: 영화 조합 추천 (Track A, B 모두 조합)
+- 420분 미만: 단일 영화 추천 (Track A, B)
+- 420분 이상: 영화 조합 추천 (Track A, B 모두 조합)
 
 DB 테이블:
 - movies: 영화 메타데이터
@@ -480,7 +480,7 @@ class HybridRecommender:
         lightgcn_scores = self.target_lightgcn_matrix @ user_gcn_profile
         
         # 3. 추천 타입 결정
-        recommendation_type = 'combination' if available_time >= 240 else 'single'
+        recommendation_type = 'combination' if available_time >= 420 else 'single'
         max_runtime = None if recommendation_type == 'combination' else available_time
         
         # 4. Track A 필터링 (장르 + 연도 + OTT 적용)
@@ -489,10 +489,10 @@ class HybridRecommender:
             min_year=2000, preferred_otts=preferred_otts
         )
         
-        # 5. Track B 필터링 (장르 무시, 연도 + OTT 적용)
+        # 5. Track B 필터링 (장르 무시, OTT 무시, 연도만 적용)
         filtered_ids_b, filtered_indices_b = self._apply_filters(
             self.common_movie_ids, None, max_runtime,
-            min_year=2000, preferred_otts=preferred_otts
+            min_year=2000, preferred_otts=None  # ✅ OTT 필터링 제거
         )
         
         if recommendation_type == 'single':
@@ -771,7 +771,7 @@ def get_user_input(recommender: HybridRecommender):
     print("\n[1] 이용 가능 시간 입력")
     print("-" * 80)
     print("영화를 볼 수 있는 시간을 분 단위로 입력하세요.")
-    print("※ 240분 이상: 영화 조합 추천")
+    print("※ 420분 이상: 영화 조합 추천")
     
     while True:
         time_input = input("\n시간(분): ").strip()

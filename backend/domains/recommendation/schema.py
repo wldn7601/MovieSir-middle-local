@@ -4,7 +4,8 @@ from pydantic import BaseModel
 from typing import List, Optional
 
 class RecommendationRequest(BaseModel):
-    runtime_limit: int = 120
+    available_time: int = 300  # 이용 가능 시간 (분) - AI 모델이 추천 모드 결정에 사용
+    runtime_limit: int = 300   # 개별 영화 최대 런타임 (분)
     genres: List[str] = []
     exclude_adult: bool = True
 

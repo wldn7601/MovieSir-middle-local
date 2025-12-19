@@ -296,14 +296,17 @@ sequenceDiagram
 ```typescript
 // frontend/src/api/movieApi.ts
 const response = await axiosInstance.post("/api/recommend", {
-  available_time: runtimeLimit, // ✅ 추가: AI 모델용 시간
-  runtime_limit: runtimeLimit, // 유지: 개별 영화 최대 런타임
+  available_time: runtimeLimit, // ✅ 추가: AI 모델용 시간 (실제 사용됨)
+  runtime_limit: runtimeLimit, // ⚠️ 하위 호환성 유지 (현재 미사용)
   genres: genreIds,
   exclude_adult: filters.excludeAdult || false,
 });
 ```
 
-**개선점**: 사용자 입력 시간을 AI 모델에 전달
+**개선점**:
+
+- 사용자 입력 시간을 `available_time`으로 AI 모델에 전달
+- `runtime_limit`은 하위 호환성을 위해 전송하지만 실제로는 사용되지 않음
 
 #### 2.2 백엔드 스키마 (변경 후)
 
@@ -311,12 +314,15 @@ const response = await axiosInstance.post("/api/recommend", {
 # backend/domains/recommendation/schema.py
 class RecommendationRequest(BaseModel):
     available_time: int = 300  # ✅ 추가: AI 모델이 추천 모드 결정에 사용
-    runtime_limit: int = 300   # 개별 영화 최대 런타임 (분)
+    runtime_limit: int = 300   # ⚠️ 현재 미사용 (하위 호환성 유지)
     genres: List[str] = []
     exclude_adult: bool = True
 ```
 
-**개선점**: AI 모델에 전달할 시간 정보 필드 추가
+**개선점**:
+
+- AI 모델에 전달할 `available_time` 필드 추가
+- `runtime_limit`은 필드로 존재하지만 백엔드/AI 모델에서 사용하지 않음
 
 #### 2.3 백엔드 서비스 (변경 후)
 

@@ -149,29 +149,38 @@ for mid in recommended_movie_ids:
 # ai/inference/db_conn_movie_reco_v2.py
 
 def recommend(self, user_movie_ids, available_time=180, ...):
-    # available_time 파라미터는 있지만 기본값만 사용됨
-    # 백엔드에서 전달하지 않아서 항상 180분으로 고정
+    # ❌ 백엔드에서 available_time을 전달하지 않음
+    # → 항상 기본값 180분으로 고정
 
-    # Track A 필터링
+    # 추천 타입 결정
+    recommendation_type = 'single'  # 180 < 420이므로 항상 단일 영화 모드
+    max_runtime = 180  # ❌ 항상 180분으로 고정
+
+    # Track A 필터링 (장르 + 런타임 + OTT 적용)
     filtered_ids_a, filtered_indices_a = self._apply_filters(
         self.common_movie_ids,
         preferred_genres,      # SF, 드라마
-        max_runtime=None,      # ❌ 런타임 고려 안 함
+        max_runtime=180,       # ⚠️ 항상 180분 기준으로 필터링
         min_year=2000,
         preferred_otts=preferred_otts
     )
 
-    # Track B 필터링
+    # Track B 필터링 (런타임 + 연도만 적용)
     filtered_ids_b, filtered_indices_b = self._apply_filters(
         self.common_movie_ids,
         None,                  # 장르 무시
-        max_runtime=None,      # ❌ 런타임 고려 안 함
+        max_runtime=180,       # ⚠️ 항상 180분 기준으로 필터링
         min_year=2000,
         preferred_otts=None
     )
 ```
 
-**문제점**: AI 모델이 런타임을 전혀 고려하지 않고 추천
+**문제점**:
+
+- AI 모델은 **런타임 필터링을 수행하지만**, 항상 **기본값 180분**으로 고정
+- 사용자가 120분 입력 → AI 모델은 180분 기준으로 추천 (0~180분 영화)
+- 사용자가 300분 입력 → AI 모델은 180분 기준으로 추천 (0~180분 영화)
+- **사용자 입력과 무관하게 항상 동일한 런타임 범위의 영화만 추천**
 
 ### 3. 필터링 단계별 분석
 
@@ -219,17 +228,30 @@ def recommend(self, user_movie_ids, available_time=180, ...):
 
 ### 4. 왜 Track A도 부족했는가?
 
-**핵심 문제**: AI 모델이 런타임을 고려하지 않고 추천
+**핵심 문제**: AI 모델은 180분 기준으로 필터링, 백엔드는 사용자 입력(예: 120분)으로 재필터링
+
+#### 사용자 입력: 120분
 
 ```
-AI 모델 추천 (Track A 25개)
-├─ 90-120분: 10개 ✅
-├─ 121-150분: 8개 ❌
-└─ 151-180분: 7개 ❌
+1단계: AI 모델 필터링 (180분 기준)
+   전체 영화 풀
+   ├─ 0-180분: Track A 25개 선택 ✅
+   └─ 181분 이상: 제외
 
-백엔드 런타임 필터링 (120분 초과 제거)
-└─ 최종: 10개만 남음
+2단계: 백엔드 필터링 (120분 기준)
+   AI 추천 Track A 25개 (0~180분)
+   ├─ 0-120분: 10개 ✅ 통과
+   ├─ 121-150분: 8개 ❌ 제거 (120분 초과)
+   └─ 151-180분: 7개 ❌ 제거 (120분 초과)
+
+   최종: 10개만 남음
 ```
+
+**이중 필터링의 문제**:
+
+- AI 모델: 180분 기준으로 추천 (사용자 입력 무시)
+- 백엔드: 120분으로 재필터링 (AI 추천의 60% 제거)
+- 결과: Track A 25개 → 10개로 감소
 
 ### 5. 왜 Track B는 거의 없었는가?
 
